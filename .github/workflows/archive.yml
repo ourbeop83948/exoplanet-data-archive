@@ -1,0 +1,46 @@
+name: Archive Exoplanet Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '29,39,49,59 23 19 1 *'
+    - cron: '9,19,29,39,49 0 20 1 *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exoplanet-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download datasets
+        run: |
+          STAMP=$(date -u +'%Y-%m-%d_%H-%M-%S')
+          DIR="snapshots/$STAMP"
+          mkdir -p "$DIR"
+
+          date -u > "$DIR/exofop_timestamp.txt"
+          curl -fL --retry 3 --max-time 300 \
+            'https://exofop.ipac.caltech.edu/tess/json/tois.csv' \
+            -o "$DIR/exofop_tois.csv"
+
+          date -u > "$DIR/nasa_timestamp.txt"
+          curl -fL --retry 3 --max-time 300 \
+            'https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=SELECT+DISTINCT+tic_id+FROM+ps+WHERE+tic_id+IS+NOT+NULL&format=csv' \
+            -o "$DIR/nasa_tic_ids.csv"
+
+          sha256sum "$DIR"/*.csv > "$DIR/checksums.txt"
+
+      - name: Save archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add snapshots/
+          git commit -m "Archive exoplanet datasets $(date -u)"
+          git push
